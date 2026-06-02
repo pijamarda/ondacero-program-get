@@ -1,0 +1,50 @@
+name: Download La Brújula episode
+
+on:
+  schedule:
+    # Runs Tuesday–Saturday at 08:00 UTC (Mon–Fri night episodes)
+    - cron: "0 8 * * 2-6"
+  workflow_dispatch:
+
+jobs:
+  scrape-and-upload:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Run scraper
+        run: ./scraper.py
+
+      - name: Upload to Google Drive
+        env:
+          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
+        run: |
+          uv run --with google-api-python-client python - <<'EOF'
+          import os, json, glob
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
+          from google.oauth2.service_account import Credentials
+
+          creds_info = json.loads(os.environ["GDRIVE_CREDENTIALS"])
+          creds = Credentials.from_service_account_info(
+              creds_info,
+              scopes=["https://www.googleapis.com/auth/drive.file"],
+          )
+          service = build("drive", "v3", credentials=creds)
+
+          folder_id = "1B_uEELersgdsmMHznLxNNxVa254Cv3bK"
+
+          files = glob.glob("la-brujula-*.mp3")
+          if not files:
+              raise FileNotFoundError("No MP3 file found to upload")
+
+          mp3 = files[0]
+          media = MediaFileUpload(mp3, mimetype="audio/mpeg", resumable=True)
+          file_meta = {"name": os.path.basename(mp3), "parents": [folder_id]}
+          uploaded = service.files().create(body=file_meta, media_body=media, fields="id,name").execute()
+          print(f"Uploaded: {uploaded['name']} (id: {uploaded['id']})")
+          EOF
