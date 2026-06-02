@@ -19,32 +19,31 @@ jobs:
       - name: Run scraper
         run: ./scraper.py
 
-      - name: Upload to Google Drive
+      - name: Upload to Dropbox
         env:
-          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
+          DROPBOX_TOKEN: ${{ secrets.DROPBOX_TOKEN }}
         run: |
-          uv run --with google-api-python-client python - <<'EOF'
-          import os, json, glob
-          from googleapiclient.discovery import build
-          from googleapiclient.http import MediaFileUpload
-          from google.oauth2.service_account import Credentials
+          uv run --with requests python - <<'EOF'
+          import os, glob, requests
 
-          creds_info = json.loads(os.environ["GDRIVE_CREDENTIALS"])
-          creds = Credentials.from_service_account_info(
-              creds_info,
-              scopes=["https://www.googleapis.com/auth/drive.file"],
-          )
-          service = build("drive", "v3", credentials=creds)
-
-          folder_id = "1B_uEELersgdsmMHznLxNNxVa254Cv3bK"
-
+          token = os.environ["DROPBOX_TOKEN"]
           files = glob.glob("la-brujula-*.mp3")
           if not files:
               raise FileNotFoundError("No MP3 file found to upload")
 
           mp3 = files[0]
-          media = MediaFileUpload(mp3, mimetype="audio/mpeg", resumable=True)
-          file_meta = {"name": os.path.basename(mp3), "parents": [folder_id]}
-          uploaded = service.files().create(body=file_meta, media_body=media, fields="id,name").execute()
-          print(f"Uploaded: {uploaded['name']} (id: {uploaded['id']})")
+          dest = f"/data/ondacero/{os.path.basename(mp3)}"
+
+          with open(mp3, "rb") as f:
+              r = requests.post(
+                  "https://content.dropboxapi.com/2/files/upload",
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Dropbox-API-Arg": f'{{"path":"{dest}","mode":"overwrite","autorename":false}}',
+                      "Content-Type": "application/octet-stream",
+                  },
+                  data=f,
+              )
+          r.raise_for_status()
+          print(f"Uploaded: {r.json()['path_display']}")
           EOF
