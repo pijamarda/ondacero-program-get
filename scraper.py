@@ -50,16 +50,20 @@ def main():
     print(f"Fetching RSS: {RSS_URL}\n")
     root = ET.fromstring(fetch_rss(RSS_URL))
 
-    full_programme = None
+    candidates = []
     for item in root.findall("./channel/item"):
         subtitle = item.findtext(f"{{{ITUNES_NS}}}subtitle", default="")
         if "programa completo" in subtitle.lower():
-            full_programme = item
-            break
+            pub_date = item.findtext("pubDate", default="")
+            parsed = parsedate(pub_date)
+            dt = datetime(*parsed[:6]) if parsed else datetime.min
+            candidates.append((dt, item))
 
-    if full_programme is None:
+    if not candidates:
         print("Could not find the full programme episode in the RSS feed.")
         sys.exit(1)
+
+    _, full_programme = max(candidates, key=lambda x: x[0])
 
     title = full_programme.findtext("title", default="(no title)")
     pub_date = full_programme.findtext("pubDate", default="")
