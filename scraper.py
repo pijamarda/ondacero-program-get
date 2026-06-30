@@ -8,6 +8,7 @@ Onda Cero - La Brújula scraper
 Downloads the latest full-programme episode from the RSS feed.
 """
 
+import re
 import sys
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -75,8 +76,17 @@ def main():
 
     audio_url = enclosure.attrib.get("url", "")
 
-    parsed = parsedate(pub_date)
-    date_str = datetime(*parsed[:6]).strftime("%Y%m%d") if parsed else "unknown"
+    # Prefer the date embedded in the title, e.g. "La Brújula (29/06/2026)",
+    # since pubDate can differ from the actual programme date.
+    date_str = None
+    m = re.search(r"(\d{2})/(\d{2})/(\d{4})", title)
+    if m:
+        day, month, year = m.groups()
+        date_str = f"{year}{month}{day}"
+    else:
+        parsed = parsedate(pub_date)
+        date_str = datetime(*parsed[:6]).strftime("%Y%m%d") if parsed else "unknown"
+
     filename = f"la-brujula-{date_str}.mp3"
 
     print(f"Title:    {title}")
