@@ -16,7 +16,6 @@ from email.utils import parsedate
 from datetime import datetime
 
 RSS_URL = "https://www.ondacero.es/rss/podcast/mount/ATRESMEDIA_LA_BRUJULA_P/fastly"
-ITUNES_NS = "http://www.itunes.com/dtds/podcast-1.0.dtd"
 
 HEADERS = {
     "User-Agent": (
@@ -51,21 +50,16 @@ def main():
     print(f"Fetching RSS: {RSS_URL}\n")
     root = ET.fromstring(fetch_rss(RSS_URL))
 
+    FULL_TITLE_RE = re.compile(r"^La Br[uú]jula\s*\(\d{2}/\d{2}/\d{4}\)$", re.IGNORECASE)
+
     candidates = []
-    fallback_candidates = []
     for item in root.findall("./channel/item"):
         title = item.findtext("title", default="")
-        subtitle = item.findtext(f"{{{ITUNES_NS}}}subtitle", default="")
-        pub_date = item.findtext("pubDate", default="")
-        parsed = parsedate(pub_date)
-        dt = datetime(*parsed[:6]) if parsed else datetime.min
-        if "programa completo" in subtitle.lower():
+        if FULL_TITLE_RE.match(title):
+            pub_date = item.findtext("pubDate", default="")
+            parsed = parsedate(pub_date)
+            dt = datetime(*parsed[:6]) if parsed else datetime.min
             candidates.append((dt, item))
-        elif re.search(r"La Br[uú]jula\s*\(\d{2}/\d{2}/\d{4}\)", title, re.IGNORECASE):
-            fallback_candidates.append((dt, item))
-
-    if not candidates:
-        candidates = fallback_candidates
 
     if not candidates:
         print("Could not find the full programme episode in the RSS feed.")
