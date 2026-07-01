@@ -52,13 +52,20 @@ def main():
     root = ET.fromstring(fetch_rss(RSS_URL))
 
     candidates = []
+    fallback_candidates = []
     for item in root.findall("./channel/item"):
+        title = item.findtext("title", default="")
         subtitle = item.findtext(f"{{{ITUNES_NS}}}subtitle", default="")
+        pub_date = item.findtext("pubDate", default="")
+        parsed = parsedate(pub_date)
+        dt = datetime(*parsed[:6]) if parsed else datetime.min
         if "programa completo" in subtitle.lower():
-            pub_date = item.findtext("pubDate", default="")
-            parsed = parsedate(pub_date)
-            dt = datetime(*parsed[:6]) if parsed else datetime.min
             candidates.append((dt, item))
+        elif re.search(r"La Br[uú]jula\s*\(\d{2}/\d{2}/\d{4}\)", title, re.IGNORECASE):
+            fallback_candidates.append((dt, item))
+
+    if not candidates:
+        candidates = fallback_candidates
 
     if not candidates:
         print("Could not find the full programme episode in the RSS feed.")
