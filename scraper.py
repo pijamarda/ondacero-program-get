@@ -50,11 +50,15 @@ def main():
     print(f"Fetching RSS: {RSS_URL}\n")
     root = ET.fromstring(fetch_rss(RSS_URL))
 
-    FULL_TITLE_RE = re.compile(r"^La Br[uú]jula\s*\(\d{2}/\d{2}/\d{4}\)$", re.IGNORECASE)
+    # Matches "La Brújula (02/07/2026)" and "La Brújula 02/07/2026" alike —
+    # the parentheses around the date are optional.
+    FULL_TITLE_RE = re.compile(
+        r"^La Br[uú]jula\s*\(?\s*\d{2}/\d{2}/\d{4}\s*\)?$", re.IGNORECASE
+    )
 
     candidates = []
     for item in root.findall("./channel/item"):
-        title = item.findtext("title", default="")
+        title = item.findtext("title", default="").strip()
         if FULL_TITLE_RE.match(title):
             pub_date = item.findtext("pubDate", default="")
             parsed = parsedate(pub_date)
