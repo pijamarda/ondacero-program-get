@@ -4,7 +4,7 @@ on:
   schedule:
     # Runs Tuesday–Saturday at ~07:00 CEST / ~08:00 CET (Mon–Fri night episodes)
     # Off-minute (7) avoids GitHub's queued round-hour slots
-    - cron: "7 5 * * 2-6"
+    # - cron: "7 5 * * 2-6"
   workflow_dispatch:
 
 jobs:
