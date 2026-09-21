@@ -1,10 +1,10 @@
-name: Download La Brujula episode
+name: Download Mas de Uno episode
 
 on:
   schedule:
-    # Runs Tuesday–Saturday at ~07:00 CEST / ~08:00 CET (Mon–Fri night episodes)
-    # Off-minute (7) avoids GitHub's queued round-hour slots
-    # - cron: "7 5 * * 2-6"
+    # Runs Monday–Friday at ~14:00 CEST / 12:00 UTC (same-day, after the 06:00–12:00 broadcast)
+    # Off-minute (13) avoids GitHub's queued round-hour slots
+    - cron: "13 12 * * 1-5"
   workflow_dispatch:
 
 jobs:
@@ -39,7 +39,7 @@ jobs:
           r.raise_for_status()
           token = r.json()["access_token"]
 
-          files = glob.glob("la-brujula-*.mp3")
+          files = glob.glob("mas-de-uno-*.mp3")
           if not files:
               raise FileNotFoundError("No MP3 file found to upload")
 

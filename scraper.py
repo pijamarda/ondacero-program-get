@@ -4,7 +4,7 @@
 # dependencies = []
 # ///
 """
-Onda Cero - La Brújula scraper
+Onda Cero - Más de Uno scraper
 Downloads the latest full-programme episode from the RSS feed.
 """
 
@@ -15,7 +15,7 @@ import xml.etree.ElementTree as ET
 from email.utils import parsedate
 from datetime import datetime
 
-RSS_URL = "https://www.ondacero.es/rss/podcast/mount/ATRESMEDIA_LA_BRUJULA_P/fastly"
+RSS_URL = "https://www.ondacero.es/rss/podcast/triton/mount/ATRESMEDIA_MAS_DE_UNO_AOD_P/origin/fastly"
 
 HEADERS = {
     "User-Agent": (
@@ -50,11 +50,15 @@ def main():
     print(f"Fetching RSS: {RSS_URL}\n")
     root = ET.fromstring(fetch_rss(RSS_URL))
 
-    # Matches "La Brújula (02/07/2026)" and "La Brújula 02/07/2026" alike —
-    # the parentheses around the date are optional.
+    # Matches "Más de uno 21/09/2026", "Más de uno Elche 08/09/2026",
+    # and "Más de uno 21/09/2026 (06:00 - 08:00)" — but not segment/clip titles
+    # that merely *mention* the programme name.
     FULL_TITLE_RE = re.compile(
-        r"^La Br[uú]jula\s*\(?\s*\d{2}/\d{2}/\d{4}\s*\)?$", re.IGNORECASE
+        r"^M[aá]s de uno(?:\s+\w+)?\s+\d{2}/\d{2}/\d{4}(?:\s*\(\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\))?$",
+        re.IGNORECASE,
     )
+
+    TIME_RANGE_RE = re.compile(r"\(\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\)")
 
     candidates = []
     for item in root.findall("./channel/item"):
@@ -63,13 +67,15 @@ def main():
             pub_date = item.findtext("pubDate", default="")
             parsed = parsedate(pub_date)
             dt = datetime(*parsed[:6]) if parsed else datetime.min
-            candidates.append((dt, item))
+            # Full-programme entries (no time range) rank above partial blocks
+            is_full = 0 if TIME_RANGE_RE.search(title) else 1
+            candidates.append((is_full, dt, item))
 
     if not candidates:
-        print("Could not find the full programme episode in the RSS feed.")
+        print("Could not find the full-programme episode in the RSS feed.")
         sys.exit(1)
 
-    _, full_programme = max(candidates, key=lambda x: x[0])
+    _, _, full_programme = max(candidates, key=lambda x: (x[0], x[1]))
 
     title = full_programme.findtext("title", default="(no title)")
     pub_date = full_programme.findtext("pubDate", default="")
@@ -81,7 +87,7 @@ def main():
 
     audio_url = enclosure.attrib.get("url", "")
 
-    # Prefer the date embedded in the title, e.g. "La Brújula (29/06/2026)",
+    # Prefer the date embedded in the title, e.g. "Más de uno 21/09/2026",
     # since pubDate can differ from the actual programme date.
     date_str = None
     m = re.search(r"(\d{2})/(\d{2})/(\d{4})", title)
@@ -92,7 +98,7 @@ def main():
         parsed = parsedate(pub_date)
         date_str = datetime(*parsed[:6]).strftime("%Y%m%d") if parsed else "unknown"
 
-    filename = f"la-brujula-{date_str}.mp3"
+    filename = f"mas-de-uno-{date_str}.mp3"
 
     print(f"Title:    {title}")
     print(f"Date:     {pub_date}")
