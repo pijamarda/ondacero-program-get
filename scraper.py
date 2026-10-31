@@ -6,10 +6,18 @@
 """
 Onda Cero - Más de Uno scraper
 Downloads the latest full-programme episode from the RSS feed.
+
+Usage:
+    ./scraper.py                  # latest episode
+    ./scraper.py --date 2026-10-28  # a specific day, if still in the feed
 """
 
+import argparse
+import os
 import re
 import sys
+import time
+import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from email.utils import parsedate
@@ -25,28 +33,85 @@ HEADERS = {
 }
 
 
+MAX_ATTEMPTS = 4
+
+
+class IncompleteDownload(Exception):
+    pass
+
+
+def with_retries(fn, what):
+    """Call fn(), retrying network errors with exponential backoff."""
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            return fn()
+        except (urllib.error.URLError, OSError, IncompleteDownload) as e:
+            if attempt == MAX_ATTEMPTS:
+                raise
+            wait = 5 * 2 ** (attempt - 1)
+            print(f"\n{what} failed (attempt {attempt}/{MAX_ATTEMPTS}): {e}")
+            print(f"Retrying in {wait}s...")
+            time.sleep(wait)
+
+
 def fetch_rss(url):
-    req = urllib.request.Request(url, headers=HEADERS)
-    with urllib.request.urlopen(req, timeout=15) as r:
-        return r.read()
+    def go():
+        req = urllib.request.Request(url, headers=HEADERS)
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.read()
+
+    return with_retries(go, "RSS fetch")
 
 
 def download(url, dest):
-    req = urllib.request.Request(url, headers=HEADERS)
-    with urllib.request.urlopen(req, timeout=60) as r, open(dest, "wb") as f:
-        total = int(r.headers.get("Content-Length", 0))
-        downloaded = 0
-        while chunk := r.read(1024 * 64):
-            f.write(chunk)
-            downloaded += len(chunk)
-            if total:
-                pct = downloaded / total * 100
-                mb = downloaded / 1_000_000
-                print(f"\r  {pct:.1f}%  ({mb:.1f} MB)", end="", flush=True)
-    print()
+    def go():
+        req = urllib.request.Request(url, headers=HEADERS)
+        with urllib.request.urlopen(req, timeout=60) as r, open(dest, "wb") as f:
+            total = int(r.headers.get("Content-Length", 0))
+            downloaded = 0
+            last_print = 0.0
+            while chunk := r.read(1024 * 64):
+                f.write(chunk)
+                downloaded += len(chunk)
+                now = time.monotonic()
+                if total and (now - last_print > 5 or downloaded == total):
+                    last_print = now
+                    pct = downloaded / total * 100
+                    mb = downloaded / 1_000_000
+                    print(f"  {pct:.1f}%  ({mb:.1f} MB)", flush=True)
+        if total and downloaded != total:
+            raise IncompleteDownload(f"got {downloaded} of {total} bytes")
+        if downloaded == 0:
+            raise IncompleteDownload("empty response")
+
+    try:
+        with_retries(go, "Download")
+    except Exception:
+        # Never leave a truncated file behind for the upload step to pick up.
+        if os.path.exists(dest):
+            os.remove(dest)
+        raise
+
+
+def parse_args():
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[1])
+    ap.add_argument(
+        "--date",
+        help="Programme date to fetch (YYYY-MM-DD). Defaults to the latest episode.",
+    )
+    args = ap.parse_args()
+    if args.date:
+        try:
+            args.date = datetime.strptime(args.date, "%Y-%m-%d")
+        except ValueError:
+            ap.error("--date must look like 2026-10-28")
+    return args
 
 
 def main():
+    args = parse_args()
+    wanted = args.date.strftime("%d/%m/%Y") if args.date else None
+
     print(f"Fetching RSS: {RSS_URL}\n")
     root = ET.fromstring(fetch_rss(RSS_URL))
 
@@ -63,7 +128,7 @@ def main():
     candidates = []
     for item in root.findall("./channel/item"):
         title = item.findtext("title", default="").strip()
-        if FULL_TITLE_RE.match(title):
+        if FULL_TITLE_RE.match(title) and (wanted is None or wanted in title):
             pub_date = item.findtext("pubDate", default="")
             parsed = parsedate(pub_date)
             dt = datetime(*parsed[:6]) if parsed else datetime.min
@@ -72,7 +137,10 @@ def main():
             candidates.append((is_full, dt, item))
 
     if not candidates:
-        print("Could not find the full-programme episode in the RSS feed.")
+        if wanted:
+            print(f"No full-programme episode for {wanted} in the RSS feed.")
+        else:
+            print("Could not find the full-programme episode in the RSS feed.")
         sys.exit(1)
 
     _, _, full_programme = max(candidates, key=lambda x: (x[0], x[1]))
